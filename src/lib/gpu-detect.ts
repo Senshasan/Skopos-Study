@@ -9,6 +9,12 @@ export interface GPUCapabilities {
   supportsF16: boolean;
 }
 
+declare global {
+  interface Navigator {
+    gpu?: any;
+  }
+}
+
 export async function detectGPUCapabilities(): Promise<GPUCapabilities> {
   if (!navigator.gpu) {
     return {
@@ -27,10 +33,12 @@ export async function detectGPUCapabilities(): Promise<GPUCapabilities> {
       throw new Error('No appropriate GPU adapter found.');
     }
 
-    const info = (adapter as any).info
-      ? (adapter as any).info
-      : (adapter as any).requestAdapterInfo
-        ? await (adapter as any).requestAdapterInfo()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const adapterExt = adapter as any;
+    const info = adapterExt.info
+      ? adapterExt.info
+      : adapterExt.requestAdapterInfo
+        ? await adapterExt.requestAdapterInfo()
         : {};
 
     const maxBufferSize = adapter.limits.maxStorageBufferBindingSize;
