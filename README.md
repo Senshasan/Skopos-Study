@@ -32,8 +32,8 @@ The project began as a private AI-powered study assistant. Along the way, it bec
 │                        React UI (Main Thread)                       │
 │  Chat · Documents · Study Tools · Settings · Conversations          │
 └──────────────────┬──────────────┬────────────────┬──────────────────┘
-                   │postMessage   │postMessage      │postMessage
-          ┌────────▼───────┐ ┌───▼──────────┐ ┌───▼──────────────┐
+                   │postMessage   │postMessage     │postMessage
+          ┌────────▼───────┐ ┌────▼─────────┐ ┌────▼─────────────┐
           │ AI Worker      │ │ Embedding    │ │ Vision Worker    │
           │ WebLLM/WebGPU  │ │ Transformers │ │ Image Analysis   │
           │ + WASM Fallback│ │ MiniLM       │ │ OCR / VLM        │
