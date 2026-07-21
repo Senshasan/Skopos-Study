@@ -151,24 +151,6 @@ Additional documentation is available for readers interested in the technical de
 
 ---
 
-## Skills Demonstrated
-
-This project explores a wide range of technologies beyond traditional frontend development.
-
-* Browser-native machine learning pipelines
-* Retrieval-Augmented Generation (RAG)
-* WebGPU integration
-* Web Workers and concurrent processing
-* IndexedDB schema design
-* Client-side vector search
-* Browser caching strategies
-* Offline-first application architecture
-* Asynchronous React state management
-* Prompt engineering for constrained local models
-* Performance optimization under hardware constraints
-
----
-
 ## Running Locally
 
 ```bash
