@@ -180,12 +180,5 @@ A Chromium-based browser with WebGPU support is recommended for the best experie
 
 On first launch, the application downloads the selected language model from Hugging Face and stores it locally. Subsequent launches can operate entirely offline.
 
----
-
-## Final Thoughts
-
-Skopos began as an attempt to build a privacy-first AI study assistant.
-
-It became something slightly different: an exploration of the practical limits of browser-native AI in 2026.
 
 I hope this repository is useful not only as an example of modern web engineering, but also as an honest account of the trade-offs involved in moving increasingly complex AI workloads from the cloud to the edge.
