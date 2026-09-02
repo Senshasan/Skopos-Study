@@ -6,7 +6,7 @@ import { v4 as uuidv4 } from 'uuid';
 
 export type DocType = 'pdf' | 'image' | 'docx' | 'xlsx' | 'csv' | 'text' | 'markdown' | 'unknown';
 
-export async function parseDocument(file: File): Promise<Omit<DbDocument, 'sizeBytes' | 'uploadedAt'> & { fileType: DocType, blob?: Blob }> {
+export async function parseDocument(file: File): Promise<Omit<DbDocument, 'sizeBytes' | 'uploadedAt'> & { fileType: DocType }> {
   const arrayBuffer = await file.arrayBuffer();
   const fileType = detectFileType(file);
   console.log('[Parser] name:', file.name, '| mime:', file.type, '| detected:', fileType);
@@ -46,6 +46,12 @@ export async function parseDocument(file: File): Promise<Omit<DbDocument, 'sizeB
     case 'image':
       // Text extraction happens on-demand via the vision model later
       extractedText = "[Image Document - Analyze with AI to extract description]";
+      blobData = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
       break;
 
     default:
@@ -58,7 +64,7 @@ export async function parseDocument(file: File): Promise<Omit<DbDocument, 'sizeB
     type: fileType,
     extractedText,
     fileType,
-    blob: fileType === 'image' ? file : undefined
+    blobData
   };
 }
 

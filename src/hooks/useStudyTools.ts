@@ -1,6 +1,9 @@
 import { useState, useCallback } from 'react';
 import { StudyEngine } from '../lib/study-engine';
 import { useWebLLM } from './useWebLLM';
+import { getAllChunks } from '../lib/rag-engine';
+import { StudyEngine } from '../lib/study-engine';
+import { useWebLLM } from './useWebLLM';
 
 export interface Flashcard {
   front: string;
@@ -17,47 +20,77 @@ export interface QuizQuestion {
 export function useStudyTools(sendMessage: ReturnType<typeof useWebLLM>['sendMessage']) {
   const [isGenerating, setIsGenerating] = useState(false);
 
-  const generateFlashcards = useCallback(async (text: string): Promise<Flashcard[]> => {
-    setIsGenerating(true);
-    try {
-      const prompt = StudyEngine.getFlashcardPrompt(text);
-      const response = await sendMessage([{ role: 'user', content: prompt }]);
-      
-      // Clean up potential markdown formatting or prefix text
-      let jsonStr = response;
-      const match = response.match(/\[[\s\S]*\]/);
-      if (match) {
-        jsonStr = match[0];
+  const getContextText = async (text: string, documentId?: string) => {
+    let contextText = text;
+    if (documentId) {
+      const chunks = await getAllChunks(documentId);
+      if (chunks.length > 0) {
+        // Simple random sampling for study tools to fit context window
+        const shuffled = [...chunks].sort(() => 0.5 - Math.random());
+        const selected = shuffled.slice(0, 15); // ~15 * 250 words = ~3750 words
+        contextText = selected.map(c => c.text).join('\n\n');
       }
-      
-      return JSON.parse(jsonStr);
-    } catch (err) {
-      console.error("Failed to generate flashcards", err);
-      throw err;
-    } finally {
-      setIsGenerating(false);
     }
+    // Hard limit to avoid OOM
+    if (contextText.length > 30000) contextText = contextText.substring(0, 30000);
+    return contextText;
+  };
+
+  const generateFlashcards = useCallback(async (text: string, documentId?: string): Promise<Flashcard[]> => {
+    setIsGenerating(true);
+    const contextText = await getContextText(text, documentId);
+    let retries = 2;
+    while (retries >= 0) {
+      try {
+        const prompt = StudyEngine.getFlashcardPrompt(contextText) + (retries < 2 ? "\n\nPlease ensure the output is strictly valid JSON." : "");
+        const response = await sendMessage([{ role: 'user', content: prompt }]);
+        
+        // Clean up potential markdown formatting or prefix text
+        let jsonStr = response;
+        const match = response.match(/\[[\s\S]*\]/);
+        if (match) {
+          jsonStr = match[0];
+        }
+        
+        return JSON.parse(jsonStr);
+      } catch (err) {
+        retries--;
+        if (retries < 0) {
+          setIsGenerating(false);
+          throw new Error("Failed to generate valid flashcards after multiple attempts.");
+        }
+      }
+    }
+    setIsGenerating(false);
+    return [];
   }, [sendMessage]);
 
-  const generateQuiz = useCallback(async (text: string, difficulty: string = 'medium'): Promise<QuizQuestion[]> => {
+  const generateQuiz = useCallback(async (text: string, difficulty: string = 'medium', documentId?: string): Promise<QuizQuestion[]> => {
     setIsGenerating(true);
-    try {
-      const prompt = StudyEngine.getQuizPrompt(text, difficulty);
-      const response = await sendMessage([{ role: 'user', content: prompt }]);
-      
-      let jsonStr = response;
-      const match = response.match(/\[[\s\S]*\]/);
-      if (match) {
-        jsonStr = match[0];
+    const contextText = await getContextText(text, documentId);
+    let retries = 2;
+    while (retries >= 0) {
+      try {
+        const prompt = StudyEngine.getQuizPrompt(contextText, difficulty) + (retries < 2 ? "\n\nPlease ensure the output is strictly valid JSON." : "");
+        const response = await sendMessage([{ role: 'user', content: prompt }]);
+        
+        let jsonStr = response;
+        const match = response.match(/\[[\s\S]*\]/);
+        if (match) {
+          jsonStr = match[0];
+        }
+        
+        return JSON.parse(jsonStr);
+      } catch (err) {
+        retries--;
+        if (retries < 0) {
+          setIsGenerating(false);
+          throw new Error("Failed to generate a valid quiz after multiple attempts.");
+        }
       }
-      
-      return JSON.parse(jsonStr);
-    } catch (err) {
-      console.error("Failed to generate quiz", err);
-      throw err;
-    } finally {
-      setIsGenerating(false);
     }
+    setIsGenerating(false);
+    return [];
   }, [sendMessage]);
 
   const generateSummary = useCallback(async (text: string, style: 'brief' | 'detailed' | 'bullet' | 'eli5'): Promise<string> => {

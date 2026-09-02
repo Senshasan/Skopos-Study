@@ -90,11 +90,10 @@ self.addEventListener('message', async (event) => {
           generated_text = generated_text.slice(prompt.length);
         }
         
-        // Fake streaming for UI consistency
+        // Fake streaming for UI consistency without blocking
         const tokens = generated_text.split(/(?=\s)|(?<=\s)/); // Split keeping whitespace
         for (const token of tokens) {
           self.postMessage({ type: 'CHAT_CHUNK', payload: { id, token, isComplete: false } });
-          await new Promise(r => setTimeout(r, 20)); // tiny delay
         }
         
         self.postMessage({ type: 'CHAT_COMPLETE', payload: { id, fullResponse: generated_text } });

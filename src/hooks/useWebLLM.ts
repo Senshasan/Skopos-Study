@@ -40,6 +40,7 @@ export function useWebLLM() {
         setProgress(null);
         setIsReady(false);
         setIsGenerating(false);
+        setCurrentResponse('');
         if (payload.id && rejects.current[payload.id]) {
           rejects.current[payload.id](new Error(payload.error));
           delete resolves.current[payload.id];

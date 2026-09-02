@@ -1,19 +1,44 @@
 import { getDB, DocumentChunk } from './db';
 import { v4 as uuidv4 } from 'uuid';
 
-export function chunkText(text: string, maxWords: number = 300, overlap: number = 50): string[] {
-  const words = text.split(/\s+/);
+export function chunkText(text: string, maxWords: number = 250): string[] {
+  // Semantic splitting by paragraphs first
+  const paragraphs = text.split(/\n\n+/);
   const chunks: string[] = [];
-  
-  if (words.length === 0) return [];
+  let currentChunk = '';
 
-  let i = 0;
-  while (i < words.length) {
-    const chunk = words.slice(i, i + maxWords).join(' ');
-    chunks.push(chunk);
-    i += maxWords - overlap;
+  for (const para of paragraphs) {
+    if (currentChunk.length + para.length > maxWords * 5) { // rough char limit
+      if (currentChunk) chunks.push(currentChunk.trim());
+      currentChunk = para;
+    } else {
+      currentChunk += (currentChunk ? '\n\n' : '') + para;
+    }
   }
-  return chunks;
+  if (currentChunk) chunks.push(currentChunk.trim());
+  
+  // Secondary pass for huge paragraphs without newlines
+  const finalChunks: string[] = [];
+  for (const chunk of chunks) {
+    if (chunk.split(/\s+/).length > maxWords * 1.5) {
+      // split by sentences
+      const sentences = chunk.match(/[^.!?]+[.!?]+/g) || [chunk];
+      let subChunk = '';
+      for (const sent of sentences) {
+        if (subChunk.length + sent.length > maxWords * 5) {
+          if (subChunk) finalChunks.push(subChunk.trim());
+          subChunk = sent;
+        } else {
+          subChunk += (subChunk ? ' ' : '') + sent;
+        }
+      }
+      if (subChunk) finalChunks.push(subChunk.trim());
+    } else {
+      finalChunks.push(chunk);
+    }
+  }
+
+  return finalChunks;
 }
 
 export function cosineSimilarity(vecA: number[] | Float32Array, vecB: number[] | Float32Array): number {
@@ -66,5 +91,14 @@ export async function searchChunks(queryVector: number[] | Float32Array, documen
 
   scoredChunks.sort((a, b) => b.score - a.score);
 
-  return scoredChunks.slice(0, topK).map(sc => sc.chunk);
+  // Filter by threshold to avoid hallucinating on irrelevant matches
+  const threshold = 0.45;
+  return scoredChunks.filter(sc => sc.score > threshold).slice(0, topK).map(sc => sc.chunk);
+}
+
+export async function getAllChunks(documentId: string): Promise<DocumentChunk[]> {
+  const db = await getDB();
+  const tx = db.transaction('document_chunks', 'readonly');
+  const index = tx.store.index('documentId');
+  return index.getAll(documentId);
 }

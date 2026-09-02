@@ -4,6 +4,8 @@ interface HeaderProps {
   isModelReady: boolean;
   gpuAdapterName: string;
   modelName: string;
+  activeTab: 'chat' | 'document';
+  onTabChange: (tab: 'chat' | 'document') => void;
   onOpenSettings: () => void;
 }
 
@@ -34,6 +36,31 @@ export function Header({ isModelReady, gpuAdapterName, modelName, onOpenSettings
           S
         </div>
         <h1 style={{ fontSize: '1.25rem', margin: 0 }}>Skopos Study</h1>
+      </div>
+
+      <div style={{ display: 'flex', background: 'var(--color-bg-base)', borderRadius: 'var(--radius-lg)', padding: '0.25rem', border: '1px solid var(--color-border)' }}>
+        <button
+          className="btn"
+          style={{ 
+            borderRadius: 'var(--radius-md)', 
+            background: activeTab === 'chat' ? 'var(--color-bg-surface-hover)' : 'transparent',
+            color: activeTab === 'chat' ? 'var(--color-text-main)' : 'var(--color-text-muted)'
+          }}
+          onClick={() => onTabChange('chat')}
+        >
+          Chat
+        </button>
+        <button
+          className="btn"
+          style={{ 
+            borderRadius: 'var(--radius-md)', 
+            background: activeTab === 'document' ? 'var(--color-bg-surface-hover)' : 'transparent',
+            color: activeTab === 'document' ? 'var(--color-text-main)' : 'var(--color-text-muted)'
+          }}
+          onClick={() => onTabChange('document')}
+        >
+          Document Specialist
+        </button>
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>

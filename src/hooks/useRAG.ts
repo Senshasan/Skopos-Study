@@ -50,14 +50,15 @@ export function useRAG() {
   const indexDocument = useCallback(async (documentId: string, text: string) => {
     setIsProcessing(true);
     try {
-      const chunks = chunkText(text, 300, 50);
+      const chunks = chunkText(text, 250);
       const embeddings: number[][] = [];
-      
-      for (let i = 0; i < chunks.length; i++) {
-        const emb = await getEmbedding(chunks[i]);
-        embeddings.push(emb);
+      // Batch requests to avoid overwhelming the worker message queue for huge documents
+      const batchSize = 10;
+      for (let i = 0; i < chunks.length; i += batchSize) {
+        const batch = chunks.slice(i, i + batchSize);
+        const batchEmbeddings = await Promise.all(batch.map(chunk => getEmbedding(chunk)));
+        embeddings.push(...batchEmbeddings);
       }
-      
       await storeChunks(documentId, chunks, embeddings);
     } catch (err) {
       console.error("Failed to index document", err);

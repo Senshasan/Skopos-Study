@@ -1,4 +1,5 @@
 import { pipeline, env } from '@huggingface/transformers';
+import { EMBEDDING_MODEL_ID } from './lib/constants';
 
 // Disable local models, we fetch from HF Hub
 env.allowLocalModels = false;
@@ -6,7 +7,7 @@ env.useBrowserCache = true;
 
 class EmbeddingPipeline {
   static task = 'feature-extraction' as const;
-  static model = 'Xenova/paraphrase-multilingual-MiniLM-L12-v2';
+  static model = EMBEDDING_MODEL_ID;
   static instance: any = null;
 
   static async getInstance(progress_callback?: Function) {

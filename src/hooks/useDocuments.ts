@@ -1,13 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import { getDB, Document } from '../lib/db';
 import { parseDocument, DocType } from '../lib/document-parsers';
-import { useRAG } from './useRAG';
 
-export function useDocuments() {
+export function useDocuments(indexDocument?: (id: string, text: string) => Promise<void>) {
   const [documents, setDocuments] = useState<Document[]>([]);
   const [activeDocumentId, setActiveDocumentId] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
-  const { indexDocument } = useRAG();
+  const [isIndexing, setIsIndexing] = useState(false);
 
   const loadDocuments = useCallback(async () => {
     const db = await getDB();
@@ -31,15 +30,17 @@ export function useDocuments() {
         type: parsed.type,
         extractedText: parsed.extractedText,
         uploadedAt: Date.now(),
-        sizeBytes: file.size
+        sizeBytes: file.size,
+        blobData: parsed.blobData
       };
 
       await db.put('documents', newDoc);
       
       // Index for RAG if it has text
-      if (parsed.extractedText && parsed.type !== 'image') {
+      if (parsed.extractedText && parsed.type !== 'image' && indexDocument) {
         // Run in background without blocking UI completely
-        indexDocument(newDoc.id, parsed.extractedText);
+        setIsIndexing(true);
+        indexDocument(newDoc.id, parsed.extractedText).finally(() => setIsIndexing(false));
       }
 
       await loadDocuments();
@@ -61,14 +62,12 @@ export function useDocuments() {
     const tx = db.transaction('document_chunks', 'readwrite');
     const index = tx.store.index('documentId');
     const keys = await index.getAllKeys(id);
-    for (const key of keys) {
-      tx.store.delete(key);
-    }
+    await Promise.all(keys.map(key => tx.store.delete(key)));
     await tx.done;
 
     if (activeDocumentId === id) setActiveDocumentId(null);
     await loadDocuments();
   }, [activeDocumentId, loadDocuments]);
 
-  return { documents, activeDocumentId, setActiveDocumentId, isUploading, uploadFile, deleteDocument };
+  return { documents, activeDocumentId, setActiveDocumentId, isUploading, isIndexing, uploadFile, deleteDocument };
 }

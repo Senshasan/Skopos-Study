@@ -21,10 +21,6 @@ export function DocumentViewer({ document, onAnalyzeImage, isAnalyzingImage }: D
     );
   }
 
-  // Handle images differently (we don't have the blob here directly, usually we'd need objectURL. 
-  // For v1 simplicity, we assume text representation or we create a way to view images)
-  // Since we only store text in DB, images will just say "[Image Document]" unless we parse the base64 or blob.
-  // We'll show the extracted text for now.
   const isImage = document.type === 'image';
 
   return (
@@ -44,8 +40,8 @@ export function DocumentViewer({ document, onAnalyzeImage, isAnalyzingImage }: D
         {isImage && onAnalyzeImage && (
           <button 
             className="btn btn-accent" 
-            onClick={() => onAnalyzeImage('placeholder')} // In a real app, we'd pass the actual blob/dataURL
-            disabled={isAnalyzingImage}
+            onClick={() => onAnalyzeImage(document.blobData || '')} 
+            disabled={isAnalyzingImage || !document.blobData}
           >
             <Wand2 size={16} />
             {isAnalyzingImage ? 'Analyzing...' : 'Analyze Image'}
@@ -58,32 +54,22 @@ export function DocumentViewer({ document, onAnalyzeImage, isAnalyzingImage }: D
           background: 'var(--color-bg-surface)', 
           padding: '2rem', 
           borderRadius: 'var(--radius-md)',
-          border: '1px solid var(--color-border)',
-          minHeight: '100%'
+          boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
         }}>
-          {isImage ? (
-             <div style={{ textAlign: 'center', color: 'var(--color-text-muted)' }}>
-               <ImageIcon size={64} style={{ opacity: 0.2, margin: '0 auto 1rem' }} />
-               <p>{document.extractedText}</p>
-             </div>
-          ) : (
-            <div className="markdown-body">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                {document.extractedText || '*No text extracted*'}
-              </ReactMarkdown>
-            </div>
+          {isImage && document.blobData && (
+            <img 
+              src={document.blobData} 
+              alt={document.name}
+              style={{ maxWidth: '100%', maxHeight: '400px', display: 'block', margin: '0 auto 2rem auto', borderRadius: 'var(--radius-sm)' }}
+            />
           )}
+          <div className="markdown-body">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              {document.extractedText || '*No text extracted*'}
+            </ReactMarkdown>
+          </div>
         </div>
       </div>
     </div>
   );
 }
-
-// Temporary icon
-const ImageIcon = ({ size, style }: any) => (
-  <svg width={size} height={size} style={style} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-    <circle cx="8.5" cy="8.5" r="1.5"></circle>
-    <polyline points="21 15 16 10 5 21"></polyline>
-  </svg>
-);

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { GPUCapabilities } from '../lib/gpu-detect';
-import { ModelConfig, TEXT_MODELS } from '../lib/model-registry';
+import { ModelConfig, TEXT_MODELS, getAvailableModels } from '../lib/model-registry';
 import { Download, HardDrive, ShieldCheck, ChevronRight } from 'lucide-react';
 
 interface OnboardingProps {
@@ -12,9 +12,24 @@ interface OnboardingProps {
 export function Onboarding({ capabilities, recommendedModel, onComplete }: OnboardingProps) {
   const [selectedModel, setSelectedModel] = useState(recommendedModel.id);
 
-  const availableModels = TEXT_MODELS.filter(m => (capabilities.supported && capabilities.maxBufferSizeMB >= parseInt(m.estimatedVRAM)*1024/4 /* rough heuristic */));
-  
-  // Just use all for simplicity in onboarding, but default to recommended
+  const availableModels = getAvailableModels(capabilities);
+
+  if (!capabilities.supported) {
+    return (
+      <div style={{ position: 'fixed', inset: 0, zIndex: 100, background: 'var(--color-bg-base)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2rem' }}>
+        <div style={{ maxWidth: '600px', width: '100%', background: 'var(--color-bg-surface)', border: '1px solid var(--color-error)', borderRadius: 'var(--radius-xl)', overflow: 'hidden', boxShadow: 'var(--shadow-lg)', padding: '3rem', textAlign: 'center' }}>
+          <ShieldCheck size={48} style={{ color: 'var(--color-error)', margin: '0 auto 1.5rem auto' }} />
+          <h1 style={{ fontSize: '1.75rem', marginBottom: '1rem', color: 'var(--color-error)' }}>WebGPU Not Available</h1>
+          <p style={{ color: 'var(--color-text-muted)', marginBottom: '1.5rem', lineHeight: 1.6 }}>
+            Skopos Study v2 requires a WebGPU-compatible browser and a dedicated graphics card with at least 8GB of VRAM or system RAM (for Unified Memory). 
+          </p>
+          <p style={{ color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>
+            We've removed the slow CPU fallback models to focus on delivering a high-performance experience. Please try again on a supported device or browser (Chrome/Edge desktop).
+          </p>
+        </div>
+      </div>
+    );
+  }
   
   return (
     <div style={{
@@ -85,7 +100,7 @@ export function Onboarding({ capabilities, recommendedModel, onComplete }: Onboa
               onChange={(e) => setSelectedModel(e.target.value)}
               style={{ flex: 1 }}
             >
-              {TEXT_MODELS.map(model => (
+              {availableModels.map(model => (
                 <option key={model.id} value={model.id}>
                   {model.displayName} ({model.estimatedVRAM}) {model.id === recommendedModel.id ? '★ Recommended' : ''}
                 </option>

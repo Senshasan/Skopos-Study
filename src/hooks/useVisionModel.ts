@@ -11,6 +11,7 @@ export function useVisionModel() {
   const rejects = useRef<Record<string, (err: any) => void>>({});
 
   useEffect(() => {
+    initWorker();
     // Cleanup on unmount
     return () => workerRef.current?.terminate();
   }, []);
@@ -43,12 +44,13 @@ export function useVisionModel() {
           }
         }
       };
+      workerRef.current.postMessage({ type: 'INIT' });
     }
   };
 
   const analyzeImage = useCallback((imageUrl: string, prompt?: string): Promise<string> => {
     return new Promise((resolve, reject) => {
-      initWorker();
+      if (!workerRef.current) initWorker();
       setIsProcessing(true);
       setError(null);
       

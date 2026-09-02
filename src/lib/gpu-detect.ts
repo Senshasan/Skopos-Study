@@ -1,4 +1,4 @@
-export type GPUTier = 'ultra' | 'high' | 'medium' | 'low' | 'cpu';
+export type GPUTier = 'ultra' | 'high' | 'medium' | 'low';
 
 export interface GPUCapabilities {
   supported: boolean;
@@ -19,10 +19,10 @@ export async function detectGPUCapabilities(): Promise<GPUCapabilities> {
   if (!navigator.gpu) {
     return {
       supported: false,
-      adapterName: 'Unknown (CPU)',
+      adapterName: 'Unknown (No WebGPU)',
       maxBufferSize: 0,
       maxBufferSizeMB: 0,
-      recommendedTier: 'cpu',
+      recommendedTier: 'low',
       supportsF16: false,
     };
   }
@@ -46,11 +46,11 @@ export async function detectGPUCapabilities(): Promise<GPUCapabilities> {
     const supportsF16 = adapter.features.has('shader-f16');
 
     let tier: GPUTier = 'low';
-    if (maxBufferSizeMB >= 4096) {
+    if (maxBufferSizeMB >= 6000) {
       tier = 'ultra';
-    } else if (maxBufferSizeMB >= 2048) {
+    } else if (maxBufferSizeMB >= 4500) {
       tier = 'high';
-    } else if (maxBufferSizeMB >= 1024) {
+    } else if (maxBufferSizeMB >= 2500) {
       tier = 'medium';
     }
 
@@ -69,7 +69,7 @@ export async function detectGPUCapabilities(): Promise<GPUCapabilities> {
       adapterName: 'Unknown (Fallback)',
       maxBufferSize: 0,
       maxBufferSizeMB: 0,
-      recommendedTier: 'cpu',
+      recommendedTier: 'low',
       supportsF16: false,
     };
   }

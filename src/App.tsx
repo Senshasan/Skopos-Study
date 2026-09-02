@@ -2,8 +2,7 @@ import { useState, useEffect } from 'react';
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
 import { ChatPanel } from './components/ChatPanel';
-import { DocumentViewer } from './components/DocumentViewer';
-import { StudyTools } from './components/StudyTools';
+import { DocumentMode } from './components/DocumentMode';
 import { Onboarding } from './components/Onboarding';
 import { SettingsPanel } from './components/SettingsPanel';
 import { UploadZone } from './components/UploadZone';
@@ -24,14 +23,14 @@ export default function App() {
   const [currentModelId, setCurrentModelId] = useState<string>('');
   const [showSettings, setShowSettings] = useState(false);
   const [showUpload, setShowUpload] = useState(false);
-  const [rightPanel, setRightPanel] = useState<'document' | 'study'>('document');
+  const [activeTab, setActiveTab] = useState<'chat' | 'document'>('chat');
 
   const { isReady: llmReady, isGenerating, progress: llmProgress, currentResponse, error: llmError, initModel, sendMessage } = useWebLLM();
   const { isReady: visionReady, isProcessing: visionProcessing, progress: visionProgress, analyzeImage } = useVisionModel();
 
-  const { documents, activeDocumentId, setActiveDocumentId, isUploading, uploadFile, deleteDocument } = useDocuments();
+  const { search, indexDocument } = useRAG();
+  const { documents, activeDocumentId, setActiveDocumentId, isUploading, isIndexing, uploadFile, deleteDocument } = useDocuments(indexDocument);
   const { conversations, activeConversationId, setActiveConversationId, activeConversation, createConversation, addMessage, deleteConversation } = useConversations();
-  const { search } = useRAG();
 
   const studyTools = useStudyTools(sendMessage);
 
@@ -79,7 +78,7 @@ export default function App() {
       const relevantChunks = await search(text, [activeDoc.id]);
       console.log('RAG chunks:', relevantChunks.length, relevantChunks);
       if (relevantChunks.length > 0) {
-        systemPrompt += `\n\nCRITICAL: The excerpts below are from the student's own study material and are the authoritative source of truth for this conversation. You MUST answer based on these excerpts even if the content contradicts general knowledge — the student is studying this specific material, not general facts. Do not substitute your own knowledge. === STUDY MATERIAL EXCERPTS ===\n`;
+        systemPrompt += `\n\nBelow are relevant excerpts from the student's study material. Please base your answers heavily on this context to ensure you are aligning with what they are studying:\n\n=== STUDY MATERIAL EXCERPTS ===\n`;
         relevantChunks.forEach(chunk => {
           systemPrompt += chunk.text + "\n---\n";
         });
@@ -93,7 +92,7 @@ export default function App() {
     }
 
     const conv = conversations.find(c => c.id === convId);
-    const history = conv ? conv.messages.slice(-6).map(m => ({ role: m.role, content: m.content })) : [];
+    const history = conv ? conv.messages.slice(-10).map(m => ({ role: m.role, content: m.content })) : [];
 
     const messages = [
       { role: 'system', content: systemPrompt },
@@ -186,6 +185,7 @@ export default function App() {
         onSelectDocument={setActiveDocumentId}
         onDeleteDocument={deleteDocument}
         onUploadClick={() => setShowUpload(true)}
+        isIndexing={isIndexing}
       />
 
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -193,58 +193,39 @@ export default function App() {
           isModelReady={llmReady}
           gpuAdapterName={capabilities?.adapterName || 'CPU'}
           modelName={TEXT_MODELS.find(m => m.id === currentModelId)?.displayName || currentModelId}
+          activeTab={activeTab}
+          onTabChange={setActiveTab}
           onOpenSettings={() => setShowSettings(true)}
         />
 
         <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-          <ChatPanel
-            messages={activeConversation?.messages || []}
-            isGenerating={isGenerating}
-            currentResponse={currentResponse}
-            onSendMessage={handleSendMessage}
-            activeContext={activeDoc ? `Studying: ${activeDoc.name}` : undefined}
-          />
-
-          <div style={{ width: '400px', borderLeft: '1px solid var(--color-border)', display: 'flex', flexDirection: 'column' }}>
-            <div style={{ display: 'flex', borderBottom: '1px solid var(--color-border)' }}>
-              <button
-                className="btn"
-                style={{ flex: 1, borderRadius: 0, background: rightPanel === 'document' ? 'var(--color-bg-surface-hover)' : 'transparent', color: rightPanel === 'document' ? 'white' : 'var(--color-text-muted)' }}
-                onClick={() => setRightPanel('document')}
-              >
-                Document View
-              </button>
-              <button
-                className="btn"
-                style={{ flex: 1, borderRadius: 0, background: rightPanel === 'study' ? 'var(--color-bg-surface-hover)' : 'transparent', color: rightPanel === 'study' ? 'white' : 'var(--color-text-muted)' }}
-                onClick={() => setRightPanel('study')}
-              >
-                Study Tools
-              </button>
-            </div>
-
-            <div style={{ flex: 1, overflow: 'hidden' }}>
-              {rightPanel === 'document' ? (
-                <DocumentViewer
-                  document={activeDoc}
-                  isAnalyzingImage={visionProcessing}
-                  onAnalyzeImage={async (url) => {
-                    if (activeDoc?.type === 'image') {
-                      const res = await analyzeImage('https://images.unsplash.com/photo-1543286386-2e659306cd6c?w=400');
-                      console.log(res);
-                    }
-                  }}
-                />
-              ) : (
-                <StudyTools
-                  isGenerating={studyTools.isGenerating}
-                  onGenerateFlashcards={() => studyTools.generateFlashcards(activeDoc?.extractedText || 'No text')}
-                  onGenerateQuiz={() => studyTools.generateQuiz(activeDoc?.extractedText || 'No text')}
-                  onGenerateSummary={() => studyTools.generateSummary(activeDoc?.extractedText || 'No text', 'brief')}
-                />
-              )}
-            </div>
-          </div>
+          {activeTab === 'chat' ? (
+            <ChatPanel
+              messages={activeConversation?.messages || []}
+              isGenerating={isGenerating}
+              currentResponse={currentResponse}
+              onSendMessage={handleSendMessage}
+              activeContext={activeDoc ? `Studying: ${activeDoc.name}` : undefined}
+            />
+          ) : (
+            <DocumentMode
+              activeDoc={activeDoc}
+              visionProcessing={visionProcessing}
+              onAnalyzeImage={async (url) => {
+                try {
+                  const res = await analyzeImage(url);
+                  console.log(res);
+                } catch (err) {
+                  console.error('Vision analysis failed:', err);
+                }
+              }}
+              isGenerating={studyTools.isGenerating}
+              isModelReady={llmReady}
+              onGenerateFlashcards={() => studyTools.generateFlashcards(activeDoc?.extractedText || 'No text', activeDoc?.id)}
+              onGenerateQuiz={() => studyTools.generateQuiz(activeDoc?.extractedText || 'No text', 'medium', activeDoc?.id)}
+              onGenerateSummary={() => studyTools.generateSummary(activeDoc?.extractedText || 'No text', 'brief')}
+            />
+          )}
         </div>
       </div>
     </div>

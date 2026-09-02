@@ -8,10 +8,12 @@ interface StudyToolsProps {
   onGenerateQuiz: () => Promise<QuizQuestion[]>;
   onGenerateSummary: () => Promise<string>;
   isGenerating: boolean;
+  isModelReady: boolean;
 }
 
-export function StudyTools({ onGenerateFlashcards, onGenerateQuiz, onGenerateSummary, isGenerating }: StudyToolsProps) {
+export function StudyTools({ onGenerateFlashcards, onGenerateQuiz, onGenerateSummary, isGenerating, isModelReady }: StudyToolsProps) {
   const [activeTab, setActiveTab] = useState<'flashcards' | 'quiz' | 'summary'>('flashcards');
+  const [error, setError] = useState<string | null>(null);
   
   const [flashcards, setFlashcards] = useState<Flashcard[]>([]);
   const [currentCardIndex, setCurrentCardIndex] = useState(0);
@@ -24,22 +26,40 @@ export function StudyTools({ onGenerateFlashcards, onGenerateQuiz, onGenerateSum
   const [summary, setSummary] = useState<string>('');
 
   const handleGenFlashcards = async () => {
-    const cards = await onGenerateFlashcards();
-    setFlashcards(cards);
-    setCurrentCardIndex(0);
-    setIsFlipped(false);
+    if (!isModelReady) return setError("Model is not ready yet.");
+    setError(null);
+    try {
+      const cards = await onGenerateFlashcards();
+      setFlashcards(cards);
+      setCurrentCardIndex(0);
+      setIsFlipped(false);
+    } catch (err: any) {
+      setError(err.message || String(err));
+    }
   };
 
   const handleGenQuiz = async () => {
-    const q = await onGenerateQuiz();
-    setQuiz(q);
-    setQuizState({});
-    setShowResults(false);
+    if (!isModelReady) return setError("Model is not ready yet.");
+    setError(null);
+    try {
+      const q = await onGenerateQuiz();
+      setQuiz(q);
+      setQuizState({});
+      setShowResults(false);
+    } catch (err: any) {
+      setError(err.message || String(err));
+    }
   };
 
   const handleGenSummary = async () => {
-    const s = await onGenerateSummary();
-    setSummary(s);
+    if (!isModelReady) return setError("Model is not ready yet.");
+    setError(null);
+    try {
+      const s = await onGenerateSummary();
+      setSummary(s);
+    } catch (err: any) {
+      setError(err.message || String(err));
+    }
   };
 
   return (
@@ -61,6 +81,12 @@ export function StudyTools({ onGenerateFlashcards, onGenerateQuiz, onGenerateSum
           onClick={() => setActiveTab('summary')}
         ><BookOpen size={16}/> Summary</button>
       </div>
+
+      {error && (
+        <div style={{ margin: '1rem', padding: '1rem', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid var(--color-error)', borderRadius: 'var(--radius-md)', color: 'var(--color-error)' }}>
+          <strong>Error: </strong> {error}
+        </div>
+      )}
 
       <div style={{ flex: 1, overflowY: 'auto', padding: '2rem' }}>
         {isGenerating ? (

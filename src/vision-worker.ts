@@ -31,7 +31,16 @@ class VisionPipeline {
 self.addEventListener('message', async (event) => {
   const { type, id, imageUrl, prompt } = event.data;
 
-  if (type === 'DESCRIBE_IMAGE') {
+  if (type === 'INIT') {
+    try {
+      await VisionPipeline.getInstance((x: any) => {
+        self.postMessage({ type: 'PROGRESS', progress: x });
+      });
+      self.postMessage({ type: 'PROGRESS', progress: { status: 'ready' } });
+    } catch (e: any) {
+      self.postMessage({ type: 'ERROR', error: e.message });
+    }
+  } else if (type === 'DESCRIBE_IMAGE') {
     try {
       const { model, processor } = await VisionPipeline.getInstance((x: any) => {
         self.postMessage({ type: 'PROGRESS', progress: x });

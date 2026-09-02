@@ -129,6 +129,11 @@ export function ChatPanel({ messages, isGenerating, currentResponse, onSendMessa
 
       <div style={{ padding: '1rem 2rem', background: 'var(--color-bg-base)' }}>
         <form onSubmit={handleSubmit} style={{ position: 'relative' }}>
+          {activeContext && (
+            <div style={{ position: 'absolute', top: '-1.5rem', left: '0.5rem', background: 'var(--color-primary)', color: 'white', fontSize: '0.75rem', padding: '0.25rem 0.5rem', borderRadius: 'var(--radius-sm)', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+              <Bot size={12} /> {activeContext}
+            </div>
+          )}
           <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}

@@ -23,6 +23,7 @@ export interface Document {
   extractedText: string;
   uploadedAt: number;
   sizeBytes: number;
+  blobData?: string;
 }
 
 export interface DocumentChunk {
@@ -64,7 +65,7 @@ let dbPromise: Promise<IDBPDatabase<SkoposDB>>;
 
 export function getDB() {
   if (!dbPromise) {
-    dbPromise = openDB<SkoposDB>('skopos-study-v1', 1, {
+    dbPromise = openDB<SkoposDB>('skopos-study-v1', 2, {
       upgrade(db) {
         if (!db.objectStoreNames.contains('conversations')) {
           const store = db.createObjectStore('conversations', { keyPath: 'id' });
