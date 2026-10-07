@@ -146,8 +146,9 @@ This README provides a high-level overview of the project.
 
 Additional documentation is available for readers interested in the technical details.
 
-* 📖 **IMPLEMENTATION.md** — Detailed walkthrough of the architecture, workers, RAG pipeline, GPU detection, persistence layer, and implementation decisions.
-* 📖 **LESSONS_LEARNED.md** — Engineering retrospective discussing browser limitations, local inference trade-offs, quantization, and why the project ultimately stopped where it did.
+* 📖 [**IMPLEMENTATION.md**](IMPLEMENTATION.md) — Detailed walkthrough of the architecture, workers, RAG pipeline, GPU detection, persistence layer, and implementation decisions.
+* 📖 [**LESSONS_LEARNED.md**](LESSONS_LEARNED.md) — Engineering retrospective discussing browser limitations, local inference trade-offs, quantization, and why the project ultimately stopped where it did.
+
 
 ---
 
