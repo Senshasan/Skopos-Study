@@ -1,4 +1,4 @@
-import { MessageSquare, FileText, Plus, Image as ImageIcon, Trash2 } from 'lucide-react';
+import { MessageSquare, FileText, Plus, Image as ImageIcon, Trash2, Loader2 } from 'lucide-react';
 import { Conversation, Document } from '../lib/db';
 
 interface SidebarProps {
@@ -14,11 +14,14 @@ interface SidebarProps {
   onDeleteDocument: (id: string) => void;
   
   onUploadClick: () => void;
+  isIndexing?: boolean;
+  activeTab?: 'chat' | 'document';
 }
 
 export function Sidebar({
   conversations, activeConversationId, onSelectConversation, onNewConversation, onDeleteConversation,
-  documents, activeDocumentId, onSelectDocument, onDeleteDocument, onUploadClick
+  documents, activeDocumentId, onSelectDocument, onDeleteDocument, onUploadClick,
+  isIndexing, activeTab
 }: SidebarProps) {
 
   return (
@@ -76,7 +79,24 @@ export function Sidebar({
       {/* Documents Section */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <div style={{ padding: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <h2 style={{ fontSize: '0.875rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--color-text-muted)', margin: 0 }}>Documents</h2>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <h2 style={{ fontSize: '0.875rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--color-text-muted)', margin: 0 }}>Documents</h2>
+            {isIndexing && (
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: '0.25rem',
+                padding: '0.15rem 0.5rem',
+                borderRadius: 'var(--radius-xl)',
+                background: 'rgba(99, 102, 241, 0.15)',
+                color: 'var(--color-primary)',
+                fontSize: '0.7rem',
+                fontWeight: 500,
+                animation: 'pulse 2s infinite'
+              }}>
+                <Loader2 size={10} style={{ animation: 'spin 1s linear infinite' }} />
+                Indexing
+              </div>
+            )}
+          </div>
           <button className="btn-icon" onClick={onUploadClick} title="Upload Document" style={{ padding: '0.25rem' }}>
             <Plus size={18} />
           </button>

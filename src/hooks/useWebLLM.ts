@@ -83,5 +83,7 @@ export function useWebLLM() {
     });
   }, [isReady]);
 
-  return { isReady, isGenerating, progress, currentResponse, error, initModel, sendMessage };
+  const clearError = useCallback(() => setError(null), []);
+
+  return { isReady, isGenerating, progress, currentResponse, error, clearError, initModel, sendMessage };
 }

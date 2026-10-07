@@ -70,7 +70,6 @@ export function SettingsPanel({ onClose, capabilities, currentModelId, onModelCh
           </p>
           <select className="input-base" defaultValue={VISION_MODELS.default.id}>
             <option value={VISION_MODELS.default.id}>{VISION_MODELS.default.displayName} (Default, Fast)</option>
-            <option value={VISION_MODELS.advanced.id}>{VISION_MODELS.advanced.displayName} (Advanced OCR)</option>
           </select>
         </section>
       </div>

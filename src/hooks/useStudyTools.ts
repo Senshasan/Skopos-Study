@@ -1,9 +1,7 @@
 import { useState, useCallback } from 'react';
 import { StudyEngine } from '../lib/study-engine';
 import { useWebLLM } from './useWebLLM';
-import { getAllChunks } from '../lib/rag-engine';
-import { StudyEngine } from '../lib/study-engine';
-import { useWebLLM } from './useWebLLM';
+import { getAllChunksForDocument, searchChunks } from '../lib/rag-engine';
 
 export interface Flashcard {
   front: string;
@@ -17,85 +15,130 @@ export interface QuizQuestion {
   explanation: string;
 }
 
-export function useStudyTools(sendMessage: ReturnType<typeof useWebLLM>['sendMessage']) {
+type SearchFn = (query: string, documentIds: string[], topK?: number) => Promise<{ text: string }[]>;
+
+/**
+ * Attempt to parse JSON from a model response, with a retry that asks the model to fix its output.
+ */
+const parseWithRetry = async (
+  response: string,
+  sendMessage: ReturnType<typeof useWebLLM>['sendMessage']
+): Promise<any> => {
+  // Try 1: extract JSON array directly
+  const match = response.match(/\[[\s\S]*\]/);
+  if (match) {
+    try { return JSON.parse(match[0]); } catch { /* fall through */ }
+  }
+  // Try 2: ask the model to fix its own output
+  const fixPrompt = `The following is malformed JSON. Fix it and return ONLY the valid JSON array:\n${response}`;
+  const fixed = await sendMessage([{ role: 'user', content: fixPrompt }]);
+  const fixMatch = fixed.match(/\[[\s\S]*\]/);
+  if (fixMatch) return JSON.parse(fixMatch[0]);
+  throw new Error('Could not parse model output as JSON after retry');
+};
+
+export function useStudyTools(
+  sendMessage: ReturnType<typeof useWebLLM>['sendMessage'],
+  search?: SearchFn
+) {
   const [isGenerating, setIsGenerating] = useState(false);
 
-  const getContextText = async (text: string, documentId?: string) => {
-    let contextText = text;
-    if (documentId) {
-      const chunks = await getAllChunks(documentId);
-      if (chunks.length > 0) {
-        // Simple random sampling for study tools to fit context window
-        const shuffled = [...chunks].sort(() => 0.5 - Math.random());
-        const selected = shuffled.slice(0, 15); // ~15 * 250 words = ~3750 words
-        contextText = selected.map(c => c.text).join('\n\n');
+  /**
+   * Get context text using targeted RAG search when available,
+   * falling back to chunk sampling for document context.
+   */
+  const getContextForStudyTool = async (
+    fallbackText: string,
+    documentId: string | undefined,
+    searchQuery: string
+  ): Promise<string> => {
+    if (!documentId) return fallbackText.substring(0, 30000);
+
+    // Targeted RAG search if search function is available
+    if (search) {
+      const relevantChunks = await search(searchQuery, [documentId], 8);
+      if (relevantChunks.length > 0) {
+        return relevantChunks.map(c => c.text).join('\n\n');
       }
     }
-    // Hard limit to avoid OOM
+
+    // Fallback: get all chunks and sample
+    const chunks = await getAllChunksForDocument(documentId);
+    if (chunks.length > 0) {
+      const selected = chunks.slice(0, 15);
+      return selected.map(c => c.text).join('\n\n');
+    }
+
+    // Last resort: use raw text
+    let contextText = fallbackText;
+    if (contextText.length > 30000) contextText = contextText.substring(0, 30000);
+    return contextText;
+  };
+
+  /**
+   * Get summary context: uses intro + conclusion heuristic (first N + last N chunks).
+   */
+  const getSummaryContext = async (
+    fallbackText: string,
+    documentId?: string
+  ): Promise<string> => {
+    if (!documentId) return fallbackText.substring(0, 30000);
+
+    const allChunks = await getAllChunksForDocument(documentId);
+    if (allChunks.length > 0) {
+      // Sort by chunk index
+      allChunks.sort((a, b) => a.chunkIndex - b.chunkIndex);
+      // Intro + conclusion heuristic
+      const introChunks = allChunks.slice(0, 4);
+      const outroChunks = allChunks.length > 4 ? allChunks.slice(-2) : [];
+      const selected = [...introChunks, ...outroChunks];
+      return selected.map(c => c.text).join('\n\n');
+    }
+
+    let contextText = fallbackText;
     if (contextText.length > 30000) contextText = contextText.substring(0, 30000);
     return contextText;
   };
 
   const generateFlashcards = useCallback(async (text: string, documentId?: string): Promise<Flashcard[]> => {
     setIsGenerating(true);
-    const contextText = await getContextText(text, documentId);
-    let retries = 2;
-    while (retries >= 0) {
-      try {
-        const prompt = StudyEngine.getFlashcardPrompt(contextText) + (retries < 2 ? "\n\nPlease ensure the output is strictly valid JSON." : "");
-        const response = await sendMessage([{ role: 'user', content: prompt }]);
-        
-        // Clean up potential markdown formatting or prefix text
-        let jsonStr = response;
-        const match = response.match(/\[[\s\S]*\]/);
-        if (match) {
-          jsonStr = match[0];
-        }
-        
-        return JSON.parse(jsonStr);
-      } catch (err) {
-        retries--;
-        if (retries < 0) {
-          setIsGenerating(false);
-          throw new Error("Failed to generate valid flashcards after multiple attempts.");
-        }
-      }
+    try {
+      const contextText = await getContextForStudyTool(text, documentId, 'key concepts definitions terms vocabulary');
+      const prompt = StudyEngine.getFlashcardPrompt(contextText);
+      const response = await sendMessage([{ role: 'user', content: prompt }]);
+      return await parseWithRetry(response, sendMessage);
+    } catch (err) {
+      console.error('Failed to generate flashcards:', err);
+      throw new Error("Failed to generate valid flashcards after multiple attempts.");
+    } finally {
+      setIsGenerating(false);
     }
-    setIsGenerating(false);
-    return [];
-  }, [sendMessage]);
+  }, [sendMessage, search]);
 
   const generateQuiz = useCallback(async (text: string, difficulty: string = 'medium', documentId?: string): Promise<QuizQuestion[]> => {
     setIsGenerating(true);
-    const contextText = await getContextText(text, documentId);
-    let retries = 2;
-    while (retries >= 0) {
-      try {
-        const prompt = StudyEngine.getQuizPrompt(contextText, difficulty) + (retries < 2 ? "\n\nPlease ensure the output is strictly valid JSON." : "");
-        const response = await sendMessage([{ role: 'user', content: prompt }]);
-        
-        let jsonStr = response;
-        const match = response.match(/\[[\s\S]*\]/);
-        if (match) {
-          jsonStr = match[0];
-        }
-        
-        return JSON.parse(jsonStr);
-      } catch (err) {
-        retries--;
-        if (retries < 0) {
-          setIsGenerating(false);
-          throw new Error("Failed to generate a valid quiz after multiple attempts.");
-        }
-      }
+    try {
+      const contextText = await getContextForStudyTool(text, documentId, 'important facts details examples evidence');
+      const prompt = StudyEngine.getQuizPrompt(contextText, difficulty);
+      const response = await sendMessage([{ role: 'user', content: prompt }]);
+      return await parseWithRetry(response, sendMessage);
+    } catch (err) {
+      console.error('Failed to generate quiz:', err);
+      throw new Error("Failed to generate a valid quiz after multiple attempts.");
+    } finally {
+      setIsGenerating(false);
     }
-    setIsGenerating(false);
-    return [];
-  }, [sendMessage]);
+  }, [sendMessage, search]);
 
-  const generateSummary = useCallback(async (text: string, style: 'brief' | 'detailed' | 'bullet' | 'eli5'): Promise<string> => {
-    const prompt = StudyEngine.getSummaryPrompt(text, style);
-    return await sendMessage([{ role: 'user', content: prompt }]);
+  const generateSummary = useCallback(async (text: string, style: 'brief' | 'detailed' | 'bullet' | 'eli5', documentId?: string): Promise<string> => {
+    setIsGenerating(true);
+    try {
+      const contextText = await getSummaryContext(text, documentId);
+      const prompt = StudyEngine.getSummaryPrompt(contextText, style);
+      return await sendMessage([{ role: 'user', content: prompt }]);
+    } finally {
+      setIsGenerating(false);
+    }
   }, [sendMessage]);
   
   const explainProblem = useCallback(async (text: string): Promise<string> => {

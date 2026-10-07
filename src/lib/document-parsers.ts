@@ -13,6 +13,7 @@ export async function parseDocument(file: File): Promise<Omit<DbDocument, 'sizeB
   const id = uuidv4();
 
   let extractedText = '';
+  let blobData: string | undefined;
 
   switch (fileType) {
     case 'pdf':

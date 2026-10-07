@@ -16,6 +16,16 @@ import { useStudyTools } from './hooks/useStudyTools';
 import { useRAG } from './hooks/useRAG';
 
 import { getRecommendedModel, resolveModelId, TEXT_MODELS } from './lib/model-registry';
+import { getDB } from './lib/db';
+
+// Threshold: if document is under ~1500 words, inject full text instead of RAG
+const RAG_THRESHOLD_WORDS = 1500;
+
+function getDocumentMode(doc: { extractedText: string } | null): 'full-context' | 'rag' {
+  if (!doc || !doc.extractedText) return 'full-context';
+  const wordCount = doc.extractedText.split(/\s+/).length;
+  return wordCount <= RAG_THRESHOLD_WORDS ? 'full-context' : 'rag';
+}
 
 export default function App() {
   const { capabilities, isDetecting } = useGPUDetection();
@@ -25,14 +35,17 @@ export default function App() {
   const [showUpload, setShowUpload] = useState(false);
   const [activeTab, setActiveTab] = useState<'chat' | 'document'>('chat');
 
-  const { isReady: llmReady, isGenerating, progress: llmProgress, currentResponse, error: llmError, initModel, sendMessage } = useWebLLM();
+  const { isReady: llmReady, isGenerating, progress: llmProgress, currentResponse, error: llmError, clearError, initModel, sendMessage } = useWebLLM();
   const { isReady: visionReady, isProcessing: visionProcessing, progress: visionProgress, analyzeImage } = useVisionModel();
 
-  const { search, indexDocument } = useRAG();
-  const { documents, activeDocumentId, setActiveDocumentId, isUploading, isIndexing, uploadFile, deleteDocument } = useDocuments(indexDocument);
+  // Hoist useRAG to App — single worker instance
+  const { isReady: ragReady, isProcessing: ragProcessing, progress: ragProgress, indexDocument, search, getEmbedding } = useRAG();
+
+  const { documents, activeDocumentId, setActiveDocumentId, isUploading, isIndexing, uploadFile, deleteDocument, loadDocuments } = useDocuments(indexDocument);
   const { conversations, activeConversationId, setActiveConversationId, activeConversation, createConversation, addMessage, deleteConversation } = useConversations();
 
-  const studyTools = useStudyTools(sendMessage);
+  // Pass search to study tools for targeted RAG queries
+  const studyTools = useStudyTools(sendMessage, search);
 
   // Auto-select recommended model based on capabilities
   useEffect(() => {
@@ -74,22 +87,39 @@ export default function App() {
     const activeDoc = documents.find(d => d.id === activeDocumentId);
     let systemPrompt = "You are Skopos Study, a helpful, precise, and encouraging AI study assistant.";
 
-    if (activeDoc && activeDoc.type !== 'image') {
-      const relevantChunks = await search(text, [activeDoc.id]);
-      console.log('RAG chunks:', relevantChunks.length, relevantChunks);
-      if (relevantChunks.length > 0) {
-        systemPrompt += `\n\nBelow are relevant excerpts from the student's study material. Please base your answers heavily on this context to ensure you are aligning with what they are studying:\n\n=== STUDY MATERIAL EXCERPTS ===\n`;
-        relevantChunks.forEach(chunk => {
-          systemPrompt += chunk.text + "\n---\n";
-        });
-        systemPrompt += "=== END OF EXCERPTS ===\n";
+    // Only inject document context in Document Specialist mode
+    if (activeTab === 'document' && activeDoc && activeDoc.type !== 'image') {
+      const mode = getDocumentMode(activeDoc);
+
+      if (mode === 'full-context') {
+        // Short document — inject full text
+        systemPrompt += `\n\nThe student has uploaded study material. Use the text below as your PRIMARY source for answering. Quote or paraphrase from it directly when relevant. If the text doesn't cover the question, say so briefly and answer from general knowledge.`;
+        systemPrompt += `\n\n=== STUDY MATERIAL ===\n${activeDoc.extractedText}\n=== END ===\n`;
+      } else {
+        // Long document — RAG search
+        const conv = conversations.find(c => c.id === convId);
+        const historyMessages = conv ? conv.messages.slice(-10) : [];
+        // If history is long AND we have RAG chunks, reduce topK to save context
+        const ragTopK = historyMessages.length > 6 ? 2 : 5;
+        const relevantChunks = await search(text, [activeDoc.id], ragTopK);
+        console.log('RAG chunks:', relevantChunks.length, relevantChunks);
+
+        if (relevantChunks.length > 0) {
+          systemPrompt += `\n\nThe student has uploaded study material. Use the excerpts below as your PRIMARY source for answering. Quote or paraphrase from them directly when relevant. If the excerpts don't cover the question, say so briefly and answer from general knowledge.\n\n`;
+          systemPrompt += `=== STUDY MATERIAL ===\n`;
+          relevantChunks.forEach(chunk => {
+            systemPrompt += chunk.text + '\n---\n';
+          });
+          systemPrompt += `=== END ===\n`;
+        }
       }
-    } else if (activeDoc && activeDoc.type === 'image') {
+    } else if (activeTab === 'document' && activeDoc && activeDoc.type === 'image') {
       systemPrompt += `\n\nThe user is currently looking at an image document named "${activeDoc.name}".`;
       if (activeDoc.extractedText && activeDoc.extractedText !== '[Image Document - Analyze with AI to extract description]') {
         systemPrompt += `\n\nImage AI Analysis: ${activeDoc.extractedText}`;
       }
     }
+    // In Chat mode (activeTab === 'chat'), no document context is injected — pure LLM chat
 
     const conv = conversations.find(c => c.id === convId);
     const history = conv ? conv.messages.slice(-10).map(m => ({ role: m.role, content: m.content })) : [];
@@ -109,6 +139,7 @@ export default function App() {
   };
 
   const activeDoc = documents.find(d => d.id === activeDocumentId) || null;
+  const docMode = activeDoc ? getDocumentMode(activeDoc) : null;
 
   if (isDetecting || !capabilities) {
     return (
@@ -146,7 +177,10 @@ export default function App() {
 
       {llmError && (
         <div style={{ position: 'fixed', top: '1rem', right: '1rem', background: 'var(--color-error)', color: 'white', padding: '1rem', borderRadius: 'var(--radius-md)', zIndex: 100, boxShadow: 'var(--shadow-lg)' }}>
-          <h4 style={{ margin: '0 0 0.5rem 0' }}>Initialization Error</h4>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.5rem' }}>
+            <h4 style={{ margin: 0 }}>Initialization Error</h4>
+            <button onClick={clearError} style={{ background: 'transparent', border: 'none', color: 'white', cursor: 'pointer', padding: '0 0 0 1rem', fontSize: '1.2rem', lineHeight: 1 }}>✕</button>
+          </div>
           <p style={{ margin: 0, fontSize: '0.9rem', maxWidth: '300px' }}>{llmError}</p>
         </div>
       )}
@@ -166,6 +200,8 @@ export default function App() {
           onUpload={async (f) => {
             try {
               await uploadFile(f);
+              // Auto-switch to document mode when uploading
+              setActiveTab('document');
             } finally {
               // Always close the overlay, even if upload throws
               setShowUpload(false);
@@ -182,10 +218,14 @@ export default function App() {
         onDeleteConversation={deleteConversation}
         documents={documents}
         activeDocumentId={activeDocumentId}
-        onSelectDocument={setActiveDocumentId}
+        onSelectDocument={(id) => {
+          setActiveDocumentId(id);
+          setActiveTab('document');
+        }}
         onDeleteDocument={deleteDocument}
         onUploadClick={() => setShowUpload(true)}
         isIndexing={isIndexing}
+        activeTab={activeTab}
       />
 
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -205,26 +245,90 @@ export default function App() {
               isGenerating={isGenerating}
               currentResponse={currentResponse}
               onSendMessage={handleSendMessage}
-              activeContext={activeDoc ? `Studying: ${activeDoc.name}` : undefined}
+              mode="chat"
             />
           ) : (
-            <DocumentMode
-              activeDoc={activeDoc}
-              visionProcessing={visionProcessing}
-              onAnalyzeImage={async (url) => {
-                try {
-                  const res = await analyzeImage(url);
-                  console.log(res);
-                } catch (err) {
-                  console.error('Vision analysis failed:', err);
-                }
-              }}
-              isGenerating={studyTools.isGenerating}
-              isModelReady={llmReady}
-              onGenerateFlashcards={() => studyTools.generateFlashcards(activeDoc?.extractedText || 'No text', activeDoc?.id)}
-              onGenerateQuiz={() => studyTools.generateQuiz(activeDoc?.extractedText || 'No text', 'medium', activeDoc?.id)}
-              onGenerateSummary={() => studyTools.generateSummary(activeDoc?.extractedText || 'No text', 'brief')}
-            />
+            <>
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                {/* Context mode indicator */}
+                {activeDoc && activeDoc.type !== 'image' && (
+                  <div style={{
+                    padding: '0.5rem 1rem',
+                    borderBottom: '1px solid var(--color-border)',
+                    background: 'var(--color-bg-surface)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.5rem',
+                    fontSize: '0.8rem'
+                  }}>
+                    <span style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.35rem',
+                      padding: '0.2rem 0.6rem',
+                      borderRadius: 'var(--radius-xl)',
+                      background: docMode === 'full-context' ? 'rgba(34, 197, 94, 0.15)' : 'rgba(59, 130, 246, 0.15)',
+                      color: docMode === 'full-context' ? 'var(--color-success)' : 'var(--color-primary)',
+                      fontWeight: 500
+                    }}>
+                      <span style={{ fontSize: '0.65rem' }}>{docMode === 'full-context' ? '🟢' : '🔵'}</span>
+                      {docMode === 'full-context' ? 'Full Context' : 'RAG Active'}
+                    </span>
+                    <span style={{ color: 'var(--color-text-muted)' }}>
+                      {docMode === 'full-context'
+                        ? '— Short document — using complete text'
+                        : '— Long document — searching for relevant sections'}
+                    </span>
+                    {isIndexing && (
+                      <span style={{
+                        marginLeft: 'auto',
+                        color: 'var(--color-warning)',
+                        fontSize: '0.75rem',
+                        fontWeight: 500
+                      }}>
+                        ⏳ Building search index…
+                      </span>
+                    )}
+                  </div>
+                )}
+
+                {/* Document mode: chat + document viewer + study tools */}
+                <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+                  <ChatPanel
+                    messages={activeConversation?.messages || []}
+                    isGenerating={isGenerating}
+                    currentResponse={currentResponse}
+                    onSendMessage={handleSendMessage}
+                    activeContext={activeDoc ? `Studying: ${activeDoc.name}` : undefined}
+                    mode="document"
+                    isIndexing={isIndexing}
+                  />
+                  <DocumentMode
+                    activeDoc={activeDoc}
+                    visionProcessing={visionProcessing}
+                    onAnalyzeImage={async (url) => {
+                      if (activeDoc?.type === 'image' && url) {
+                        try {
+                          const description = await analyzeImage(url);
+                          // Persist the vision analysis result to IDB
+                          const db = await getDB();
+                          const updated = { ...activeDoc, extractedText: description };
+                          await db.put('documents', updated);
+                          await loadDocuments(); // trigger refresh
+                        } catch (err) {
+                          console.error('Vision analysis failed:', err);
+                        }
+                      }
+                    }}
+                    isGenerating={studyTools.isGenerating}
+                    isModelReady={llmReady}
+                    onGenerateFlashcards={() => studyTools.generateFlashcards(activeDoc?.extractedText || 'No text', activeDoc?.id)}
+                    onGenerateQuiz={() => studyTools.generateQuiz(activeDoc?.extractedText || 'No text', 'medium', activeDoc?.id)}
+                    onGenerateSummary={() => studyTools.generateSummary(activeDoc?.extractedText || 'No text', 'brief', activeDoc?.id)}
+                  />
+                </div>
+              </div>
+            </>
           )}
         </div>
       </div>

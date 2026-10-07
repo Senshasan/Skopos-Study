@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Send, User, Bot, Loader2 } from 'lucide-react';
+import { Send, User, Bot, Loader2, MessageSquare, BookOpen } from 'lucide-react';
 import { Message } from '../lib/db';
 
 interface ChatPanelProps {
@@ -10,9 +10,11 @@ interface ChatPanelProps {
   currentResponse: string;
   onSendMessage: (text: string) => void;
   activeContext?: string; // e.g., "Studying: biology.pdf"
+  mode?: 'chat' | 'document';
+  isIndexing?: boolean;
 }
 
-export function ChatPanel({ messages, isGenerating, currentResponse, onSendMessage, activeContext }: ChatPanelProps) {
+export function ChatPanel({ messages, isGenerating, currentResponse, onSendMessage, activeContext, mode = 'chat', isIndexing }: ChatPanelProps) {
   const [input, setInput] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -26,7 +28,7 @@ export function ChatPanel({ messages, isGenerating, currentResponse, onSendMessa
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim() || isGenerating) return;
+    if (!input.trim() || isGenerating || (isIndexing && mode === 'document')) return;
     onSendMessage(input.trim());
     setInput('');
   };
@@ -59,26 +61,29 @@ export function ChatPanel({ messages, isGenerating, currentResponse, onSendMessa
   // Filter out system messages for display
   const chatMessages = displayMessages.filter(m => m.role !== 'system');
 
+  const isSendDisabled = !input.trim() || isGenerating || (isIndexing && mode === 'document');
+
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', position: 'relative' }}>
       
-      {activeContext && (
-        <div style={{ 
-          position: 'absolute', top: '1rem', left: '50%', transform: 'translateX(-50%)',
-          background: 'var(--color-bg-surface-hover)', backdropFilter: 'blur(8px)',
-          padding: '0.25rem 1rem', borderRadius: 'var(--radius-xl)', fontSize: '0.8rem',
-          color: 'var(--color-accent)', border: '1px solid var(--color-border)',
-          zIndex: 10
-        }}>
-          {activeContext}
-        </div>
-      )}
+
 
       <div style={{ flex: 1, overflowY: 'auto', padding: '2rem', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
         {chatMessages.length === 0 ? (
-          <div style={{ margin: 'auto', textAlign: 'center', color: 'var(--color-text-muted)' }}>
-            <h2 style={{ color: 'var(--color-text-main)', marginBottom: '0.5rem' }}>Welcome to Skopos Study</h2>
-            <p>Upload a document and ask questions, or just start chatting.</p>
+          <div style={{ margin: 'auto', textAlign: 'center', color: 'var(--color-text-muted)', maxWidth: '400px' }}>
+            {mode === 'chat' ? (
+              <>
+                <MessageSquare size={48} style={{ opacity: 0.2, margin: '0 auto 1rem' }} />
+                <h2 style={{ color: 'var(--color-text-main)', marginBottom: '0.5rem' }}>General Chat</h2>
+                <p>Ask me anything. I'll use my own knowledge to help you study.</p>
+              </>
+            ) : (
+              <>
+                <BookOpen size={48} style={{ opacity: 0.2, margin: '0 auto 1rem' }} />
+                <h2 style={{ color: 'var(--color-text-main)', marginBottom: '0.5rem' }}>Document Specialist</h2>
+                <p>Upload a lecture script, textbook chapter, or research paper. I'll study it and answer your questions.</p>
+              </>
+            )}
           </div>
         ) : (
           chatMessages.map(msg => (
@@ -138,8 +143,16 @@ export function ChatPanel({ messages, isGenerating, currentResponse, onSendMessa
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={isGenerating ? "AI is thinking..." : "Ask a question (Ctrl+Enter to send)..."}
-            disabled={isGenerating}
+            placeholder={
+              isIndexing && mode === 'document'
+                ? "Building search index… please wait"
+                : isGenerating
+                  ? "AI is thinking..."
+                  : mode === 'chat'
+                    ? "Ask me anything..."
+                    : "Ask about your document..."
+            }
+            disabled={isGenerating || (isIndexing && mode === 'document')}
             style={{
               width: '100%',
               padding: '1rem 3rem 1rem 1rem',
@@ -158,7 +171,7 @@ export function ChatPanel({ messages, isGenerating, currentResponse, onSendMessa
           />
           <button 
             type="submit" 
-            disabled={!input.trim() || isGenerating}
+            disabled={isSendDisabled}
             className="btn-primary"
             style={{ 
               position: 'absolute', right: '0.5rem', bottom: '0.75rem', 

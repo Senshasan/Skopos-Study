@@ -14,44 +14,34 @@ export interface ModelConfig {
 
 export const TEXT_MODELS: ModelConfig[] = [
   {
-    id: 'DeepSeek-R1-Distill-Qwen-14B-q4f16_1-MLC',
-    fallbackId: 'DeepSeek-R1-Distill-Qwen-14B-q4f32_1-MLC',
-    displayName: 'DeepSeek-R1-Distill 14B',
-    params: '14B',
+    id: 'Qwen2.5-7B-Instruct-q4f16_1-MLC',
+    fallbackId: 'Qwen2.5-7B-Instruct-q4f32_1-MLC',
+    displayName: 'Qwen2.5 7B',
+    params: '7B',
     runtime: 'webllm',
     tier: 'ultra',
-    estimatedVRAM: '8GB+',
-    description: 'Opt-in reasoning heavy-hitter. Produces deep thinking traces before answering.',
+    estimatedVRAM: '4GB+',
+    description: 'Best reasoning and instruction following. Recommended for discrete GPUs.',
   },
   {
-    id: 'Qwen3-14B-Instruct-q4f16_1-MLC',
-    fallbackId: 'Qwen3-14B-Instruct-q4f32_1-MLC',
-    displayName: 'Qwen3 14B',
-    params: '14B',
-    runtime: 'webllm',
-    tier: 'ultra',
-    estimatedVRAM: '8GB+',
-    description: 'Powerful model with deep reasoning and hybrid thinking mode. Best for desktops.',
-  },
-  {
-    id: 'Llama-3.1-8B-Instruct-q4f16_1-MLC',
-    fallbackId: 'Llama-3.1-8B-Instruct-q4f32_1-MLC',
-    displayName: 'Llama 3.1 8B',
-    params: '8B',
+    id: 'Phi-4-mini-instruct-q4f16_1-MLC',
+    fallbackId: 'Phi-4-mini-instruct-q4f32_1-MLC',
+    displayName: 'Phi-4 Mini',
+    params: '3.8B',
     runtime: 'webllm',
     tier: 'high',
-    estimatedVRAM: '5GB+',
-    description: 'Best all-rounder instruction following model.',
+    estimatedVRAM: '2.5GB+',
+    description: 'Strong reasoning in a compact package. Good for modern laptops.',
   },
   {
-    id: 'Qwen3-4B-Instruct-q4f16_1-MLC',
-    fallbackId: 'Qwen3-4B-Instruct-q4f32_1-MLC',
-    displayName: 'Qwen3 4B',
-    params: '4B',
+    id: 'gemma-2-2b-it-q4f16_1-MLC',
+    fallbackId: 'gemma-2-2b-it-q4f32_1-MLC',
+    displayName: 'Gemma-2 2B',
+    params: '2B',
     runtime: 'webllm',
     tier: 'medium',
-    estimatedVRAM: '3.5GB+',
-    description: 'Fast, smart, with optional thinking mode. Great balance.',
+    estimatedVRAM: '1.5GB+',
+    description: 'Minimum recommended. Works on most hardware with WebGPU support.',
   },
 ];
 
@@ -65,7 +55,8 @@ export const VISION_MODELS = {
 
 export const EMBEDDING_MODEL = {
   id: EMBEDDING_MODEL_ID,
-  displayName: 'Multilingual MiniLM',
+  displayName: 'Multilingual MiniLM-L12',
+  dimensions: 384,
 };
 
 const tierRank: Record<GPUTier, number> = {
@@ -96,5 +87,6 @@ export function getRecommendedModel(capabilities: GPUCapabilities): ModelConfig 
 
 export function getAvailableModels(capabilities: GPUCapabilities): ModelConfig[] {
   const targetRank = tierRank[capabilities.recommendedTier] || 1;
-  return TEXT_MODELS.filter(m => tierRank[m.tier] <= targetRank);
+  const available = TEXT_MODELS.filter(m => tierRank[m.tier] <= targetRank);
+  return available.length > 0 ? available : [TEXT_MODELS[TEXT_MODELS.length - 1]];
 }

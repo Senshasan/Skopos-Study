@@ -69,5 +69,5 @@ export function useDocuments(indexDocument?: (id: string, text: string) => Promi
     await loadDocuments();
   }, [activeDocumentId, loadDocuments]);
 
-  return { documents, activeDocumentId, setActiveDocumentId, isUploading, isIndexing, uploadFile, deleteDocument };
+  return { documents, activeDocumentId, setActiveDocumentId, isUploading, isIndexing, uploadFile, deleteDocument, loadDocuments };
 }

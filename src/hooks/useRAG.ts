@@ -47,16 +47,20 @@ export function useRAG() {
     });
   }, []);
 
+  const getEmbeddingBatch = useCallback((texts: string[]): Promise<number[][]> => {
+    return Promise.all(texts.map(text => getEmbedding(text)));
+  }, [getEmbedding]);
+
   const indexDocument = useCallback(async (documentId: string, text: string) => {
     setIsProcessing(true);
     try {
-      const chunks = chunkText(text, 250);
+      const chunks = chunkText(text, 300, 50);
       const embeddings: number[][] = [];
       // Batch requests to avoid overwhelming the worker message queue for huge documents
       const batchSize = 10;
       for (let i = 0; i < chunks.length; i += batchSize) {
         const batch = chunks.slice(i, i + batchSize);
-        const batchEmbeddings = await Promise.all(batch.map(chunk => getEmbedding(chunk)));
+        const batchEmbeddings = await getEmbeddingBatch(batch);
         embeddings.push(...batchEmbeddings);
       }
       await storeChunks(documentId, chunks, embeddings);
@@ -65,9 +69,9 @@ export function useRAG() {
     } finally {
       setIsProcessing(false);
     }
-  }, [getEmbedding]);
+  }, [getEmbeddingBatch]);
 
-  const search = useCallback(async (query: string, documentIds: string[], topK: number = 3) => {
+  const search = useCallback(async (query: string, documentIds: string[], topK: number = 5) => {
     const queryEmbedding = await getEmbedding(query);
     const results = await searchChunks(queryEmbedding, documentIds, topK);
     return results;

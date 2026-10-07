@@ -1,35 +1,53 @@
 import { getDB, DocumentChunk } from './db';
 import { v4 as uuidv4 } from 'uuid';
 
-export function chunkText(text: string, maxWords: number = 250): string[] {
-  // Semantic splitting by paragraphs first
-  const paragraphs = text.split(/\n\n+/);
+/**
+ * Paragraph-first semantic chunking with word-count targeting and overlap.
+ * Splits on double newlines first, merges small paragraphs, splits oversized ones,
+ * and keeps the last paragraph as overlap into the next chunk.
+ */
+export function chunkText(text: string, targetWords: number = 300, overlap: number = 50): string[] {
+  // Split on paragraph boundaries and filter tiny fragments
+  const paragraphs = text.split(/\n{2,}/).map(p => p.trim()).filter(p => p.length > 20);
   const chunks: string[] = [];
-  let currentChunk = '';
+  let current: string[] = [];
+  let currentWordCount = 0;
 
   for (const para of paragraphs) {
-    if (currentChunk.length + para.length > maxWords * 5) { // rough char limit
-      if (currentChunk) chunks.push(currentChunk.trim());
-      currentChunk = para;
+    const paraWords = para.split(/\s+/).length;
+
+    if (currentWordCount + paraWords > targetWords && current.length > 0) {
+      chunks.push(current.join('\n\n'));
+      // Overlap: keep last paragraph as start of next chunk
+      const overlapParas = current.slice(-1);
+      const overlapWordCount = overlapParas.join(' ').split(/\s+/).length;
+      current = [...overlapParas, para];
+      currentWordCount = overlapWordCount + paraWords;
     } else {
-      currentChunk += (currentChunk ? '\n\n' : '') + para;
+      current.push(para);
+      currentWordCount += paraWords;
     }
   }
-  if (currentChunk) chunks.push(currentChunk.trim());
-  
-  // Secondary pass for huge paragraphs without newlines
+
+  if (current.length > 0) chunks.push(current.join('\n\n'));
+
+  // Secondary pass: split any remaining oversized chunks by sentence
   const finalChunks: string[] = [];
   for (const chunk of chunks) {
-    if (chunk.split(/\s+/).length > maxWords * 1.5) {
-      // split by sentences
+    const wordCount = chunk.split(/\s+/).length;
+    if (wordCount > targetWords * 2) {
       const sentences = chunk.match(/[^.!?]+[.!?]+/g) || [chunk];
       let subChunk = '';
+      let subWordCount = 0;
       for (const sent of sentences) {
-        if (subChunk.length + sent.length > maxWords * 5) {
-          if (subChunk) finalChunks.push(subChunk.trim());
+        const sentWords = sent.trim().split(/\s+/).length;
+        if (subWordCount + sentWords > targetWords && subChunk) {
+          finalChunks.push(subChunk.trim());
           subChunk = sent;
+          subWordCount = sentWords;
         } else {
           subChunk += (subChunk ? ' ' : '') + sent;
+          subWordCount += sentWords;
         }
       }
       if (subChunk) finalChunks.push(subChunk.trim());
@@ -38,7 +56,7 @@ export function chunkText(text: string, maxWords: number = 250): string[] {
     }
   }
 
-  return finalChunks;
+  return finalChunks.length > 0 ? finalChunks : [text.trim()];
 }
 
 export function cosineSimilarity(vecA: number[] | Float32Array, vecB: number[] | Float32Array): number {
@@ -71,7 +89,14 @@ export async function storeChunks(documentId: string, chunksText: string[], embe
   await tx.done;
 }
 
-export async function searchChunks(queryVector: number[] | Float32Array, documentIds: string[], topK: number = 3): Promise<DocumentChunk[]> {
+const SIMILARITY_THRESHOLD = 0.25;
+
+export async function searchChunks(
+  queryVector: number[] | Float32Array,
+  documentIds: string[],
+  topK: number = 5,
+  threshold: number = SIMILARITY_THRESHOLD
+): Promise<DocumentChunk[]> {
   const db = await getDB();
   const tx = db.transaction('document_chunks', 'readonly');
   const index = tx.store.index('documentId');
@@ -83,22 +108,23 @@ export async function searchChunks(queryVector: number[] | Float32Array, documen
     allRelevantChunks = allRelevantChunks.concat(chunks);
   }
 
-  // Calculate similarity and sort
-  const scoredChunks = allRelevantChunks.map(chunk => ({
-    chunk,
-    score: cosineSimilarity(queryVector, chunk.embedding)
-  }));
+  // Calculate similarity, filter by threshold, and sort
+  const scoredChunks = allRelevantChunks
+    .map(chunk => ({
+      chunk,
+      score: cosineSimilarity(queryVector, chunk.embedding)
+    }))
+    .filter(sc => sc.score >= threshold);
 
   scoredChunks.sort((a, b) => b.score - a.score);
-
-  // Filter by threshold to avoid hallucinating on irrelevant matches
-  const threshold = 0.45;
-  return scoredChunks.filter(sc => sc.score > threshold).slice(0, topK).map(sc => sc.chunk);
+  return scoredChunks.slice(0, topK).map(sc => sc.chunk);
 }
 
-export async function getAllChunks(documentId: string): Promise<DocumentChunk[]> {
+export async function getAllChunksForDocument(documentId: string): Promise<DocumentChunk[]> {
   const db = await getDB();
   const tx = db.transaction('document_chunks', 'readonly');
-  const index = tx.store.index('documentId');
-  return index.getAll(documentId);
+  return tx.store.index('documentId').getAll(documentId);
 }
+
+// Legacy alias
+export const getAllChunks = getAllChunksForDocument;

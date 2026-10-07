@@ -232,3 +232,8 @@ code, pre {
   margin-left: 0;
   color: var(--color-text-muted);
 }
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}

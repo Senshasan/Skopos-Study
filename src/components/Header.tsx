@@ -9,7 +9,7 @@ interface HeaderProps {
   onOpenSettings: () => void;
 }
 
-export function Header({ isModelReady, gpuAdapterName, modelName, onOpenSettings }: HeaderProps) {
+export function Header({ isModelReady, gpuAdapterName, modelName, activeTab, onTabChange, onOpenSettings }: HeaderProps) {
   return (
     <header style={{
       display: 'flex',
